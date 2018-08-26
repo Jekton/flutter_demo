@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 void main() {
@@ -43,6 +45,9 @@ class RollingButton extends StatefulWidget {
 
 // 可能看起来有点恶心，这里的泛型参数居然是 RollingButton
 class _RollingState extends State<RollingButton> {
+
+  final _random = Random();
+
   @override
   Widget build(BuildContext context) {
     return RaisedButton(
@@ -51,14 +56,21 @@ class _RollingState extends State<RollingButton> {
     );
   }
 
+  List<int> _roll() {
+    final roll1 = _random.nextInt(6) + 1;
+    final roll2 = _random.nextInt(6) + 1;
+    return [roll1, roll2];
+  }
+
   void _onPressed() {
     debugPrint('_RollingState._onPressed');
+    final rollResults = _roll();
     showDialog(
         // 第一个 context 是参数名，第二个 context 是 State 的成员变量
         context: context,
         builder: (_) {
           return AlertDialog(
-            content: Text('AlertDialog'),
+            content: Text('Roll result: (${rollResults[0]}, ${rollResults[1]})'),
           );
         }
     );
