@@ -26,17 +26,41 @@ class MyApp extends StatelessWidget {
         // 我们知道，Flutter 里所有的东西都是 widget。为了把按钮放在屏幕的中央，
         // 这里使用了 Center（它是一个 widget）。
         body: Center(
-          child: RaisedButton(
-            // 用户点击时候调用
-            onPressed: _onPressed,
-            child: Text('roll'),
-          ),
+          child: RollingButton(),
         ),
       ),
     );
   }
+}
+
+class RollingButton extends StatefulWidget {
+  // StatefulWidget 需要实现这个方法，返回一个 State
+  @override
+  State createState() {
+    return _RollingState();
+  }
+}
+
+// 可能看起来有点恶心，这里的泛型参数居然是 RollingButton
+class _RollingState extends State<RollingButton> {
+  @override
+  Widget build(BuildContext context) {
+    return RaisedButton(
+      child: Text('Roll'),
+      onPressed: _onPressed,
+    );
+  }
 
   void _onPressed() {
-    // TODO
+    debugPrint('_RollingState._onPressed');
+    showDialog(
+        // 第一个 context 是参数名，第二个 context 是 State 的成员变量
+        context: context,
+        builder: (_) {
+          return AlertDialog(
+            content: Text('AlertDialog'),
+          );
+        }
+    );
   }
 }
