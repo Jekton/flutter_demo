@@ -1,6 +1,15 @@
+
 import 'package:flutter/material.dart';
 
-void main() {
+import 'echo_client.dart';
+import 'echo_server.dart';
+import 'message.dart';
+
+
+HttpEchoServer _server;
+HttpEchoClient _client;
+
+void main() async {
   runApp(MyApp());
 }
 
@@ -15,19 +24,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class Message {
-  final String msg;
-  final int timestamp;
-
-  Message(this.msg, this.timestamp);
-
-  @override
-  String toString() {
-    return 'Message{msg: $msg, timestamp: $timestamp}';
-  }
-
-}
-
 class MessageList extends StatefulWidget {
 
   MessageList({Key key}): super(key: key);
@@ -38,8 +34,28 @@ class MessageList extends StatefulWidget {
   }
 }
 
-class _MessageListState extends State<MessageList> {
+class _MessageListState extends State<MessageList> with WidgetsBindingObserver {
   final List<Message> messages = [];
+
+  @override
+  void initState() {
+    super.initState();
+
+    const port = 6060;
+    _server = HttpEchoServer(port);
+    // initState 不是一个 async 函数，这里我们不能直接 await _server.start(),
+    // future.then(...) 跟 await 是等价的
+    _server.start().then((_) {
+      // 等服务器启动后才创建客户端
+      _client = HttpEchoClient(port);
+      _client.getHistory().then((list) {
+        setState(() {
+          messages.addAll(list);
+        });
+      });
+      WidgetsBinding.instance.addObserver(this);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +77,15 @@ class _MessageListState extends State<MessageList> {
     setState(() {
       messages.add(msg);
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      var server = _server;
+      _server = null;
+      server?.close();
+    }
   }
 }
 
@@ -86,9 +111,14 @@ class MessageListScreen extends StatelessWidget {
               context,
               MaterialPageRoute(builder: (_) => AddMessageScreen())
           );
-          debugPrint('result = $result');
-          if (result is Message) {
-            messageListKey.currentState.addMessage(result);
+          if (_client == null) return;
+          // 现在，我们不是直接构造一个 Message，而是通过 _client 把消息
+          // 发送给服务器
+          var msg = await _client.send(result);
+          if (msg != null) {
+            messageListKey.currentState.addMessage(msg);
+          } else {
+            debugPrint('fail to send $result');
           }
         },
         tooltip: 'Add message',
@@ -147,11 +177,7 @@ class _MessageFormState extends State<MessageForm> {
           InkWell(
             onTap: () {
               debugPrint('send: ${editController.text}');
-              final msg = Message(
-                editController.text,
-                DateTime.now().millisecondsSinceEpoch
-              );
-              Navigator.pop(context, msg);
+              Navigator.pop(context, editController.text);
             },
             onDoubleTap: () => debugPrint('double tapped'),
             onLongPress: () => debugPrint('long pressed'),
