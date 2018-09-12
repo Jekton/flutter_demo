@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart' as path_provider;
+import 'package:sqflite/sqflite.dart';
 
 import 'message.dart';
 
@@ -11,14 +11,19 @@ class HttpEchoServer {
   static const GET = 'GET';
   static const POST = 'POST';
 
+  static const tableName = 'History';
+  static const columnId = 'id';
+  static const columnMsg = 'msg';
+  static const columnTimestamp = 'timestamp';
+
   final int port;
   HttpServer httpServer;
+  Database database;
   // 在 Dart 里面，函数也是 first class object，我们可以直接把
   // 函数放到 Map 里面
   Map<String, void Function(HttpRequest)> routes;
 
   final List<Message> messages = [];
-  String historyFilepath;
 
   HttpEchoServer(this.port) {
     _initRoutes();
@@ -36,7 +41,7 @@ class HttpEchoServer {
 
   // 返回一个 Future，这样客户端就能够在 start 完成后做一些事
   Future start() async {
-    historyFilepath = await _historyPath();
+    await _initDatabase();
     await _loadMessages();
     // 1. 创建一个 HttpServer
     httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
@@ -52,6 +57,24 @@ class HttpEchoServer {
         request.response.close();
       }
     });
+  }
+
+  Future _initDatabase() async {
+    var path = await getDatabasesPath() + '/history.db';
+    database = await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        var sql = '''
+            CREATE TABLE $tableName (
+            $columnId INTEGER PRIMARY KEY,
+            $columnMsg TEXT,
+            $columnTimestamp INTEGER
+            )
+            ''';
+        await db.execute(sql);
+      }
+    );
   }
 
   _unsupportedMethod(HttpRequest request) {
@@ -89,58 +112,37 @@ class HttpEchoServer {
       var data = json.encode(message);
       // 把响应写回给客户端
       request.response.write(data);
+      _storeMessage(message);
     } else {
       request.response.statusCode = HttpStatus.badRequest;
     }
     request.response.close();
-    _storeMessages();
   }
 
-  Future<bool> _storeMessages() async {
-    try {
-      // json.encode 支持 List、Map
-      final data = json.encode(messages);
-      final file = File(historyFilepath);
-      final exists = await file.exists();
-      if (!exists) {
-        await file.create();
-      }
-      file.writeAsString(data);
-      return true;
-    // 虽然文件操作方法都是异步的，我们仍然可以通过这种方式 catch 到
-    // 他们抛出的异常
-    } catch (e) {
-      print('_storeMessages: $e');
-      return false;
-    }
+  void _storeMessage(Message msg) {
+    database.insert(tableName, msg.toJson());
   }
 
   Future _loadMessages() async {
-    try {
-      var file = File(historyFilepath);
-      var exists = await file.exists();
-      if (!exists) return;
-
-      var content = await file.readAsString();
-      var list = json.decode(content);
-      for (var msg in list) {
-        var message = Message.fromJson(msg);
-        messages.add(message);
-      }
-    } catch (e) {
-      print('_loadMessages: $e');
+    var list = await database.query(
+      tableName,
+      columns: [columnMsg, columnTimestamp],
+      orderBy: columnId,
+    );
+    for (var item in list) {
+      var message = Message.fromJson(item);
+      messages.add(message);
     }
-  }
-
-  Future<String> _historyPath() async {
-    // 获取应用私有的文件目录
-    final directory = await path_provider.getApplicationDocumentsDirectory();
-    return directory.path + '/messages.json';
   }
 
   void close() async {
     var server = httpServer;
     httpServer = null;
     await server?.close();
+    var db = database;
+    database = null;
+    db?.close();
   }
+
 }
+
